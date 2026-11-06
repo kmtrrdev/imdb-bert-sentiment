@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CineScore — IMDB Sentiment API</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ─── TOKENS ─────────────────────────────────────────── */
+    :root {
+      --black:      #07070D;
+      --panel:      #111118;
+      --surface:    #18181F;
+      --border:     #2A2A38;
+      --gold:       #F5C842;
+      --gold-dim:   #A8893A;
+      --cream:      #E8E0D0;
+      --muted:      #6B6B80;
+      --red:        #9B1C1C;
+      --red-bright: #EF4444;
+      --green:      #22C55E;
+      --font-display: 'Playfair Display', Georgia, serif;
+      --font-mono:    'JetBrains Mono', monospace;
+      --font-body:    'Inter', sans-serif;
+    }
+
+    /* ─── RESET ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--black);
+      color: var(--cream);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── FILM GRAIN OVERLAY ─────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0.35;
+    }
+
+    /* ─── HEADER ─────────────────────────────────────────── */
+    header {
+      position: relative;
+      text-align: center;
+      padding: 3.5rem 2rem 2rem;
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    header::before {
+      content: '';
+      position: absolute;
+      top: -60px; left: 50%;
+      transform: translateX(-50%);
+      width: 300px; height: 180px;
+      background: radial-gradient(ellipse at center, rgba(245,200,66,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .film-strip {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 1.5rem;
+    }
+    .film-hole {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      border: 1.5px solid var(--gold-dim);
+      opacity: 0.5;
+    }
+
+    .logo {
+      font-family: var(--font-display);
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      color: var(--gold);
+      text-shadow: 0 0 60px rgba(245,200,66,0.25);
+      line-height: 1;
+    }
+
+    .logo-sub {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.35em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-top: 0.5rem;
+    }
+
+    .api-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 1.2rem;
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--muted);
+      background: var(--panel);
+    }
+    .api-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ─── MAIN LAYOUT ────────────────────────────────────── */
+    main {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    /* ─── SCREEN FRAME ───────────────────────────────────── */
+    .screen-frame {
+      position: relative;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--panel);
+      overflow: hidden;
+      margin-bottom: 2rem;
+      box-shadow:
+        0 0 0 1px rgba(245,200,66,0.04),
+        0 25px 60px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    /* vignette corners */
+    .screen-frame::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.5) 100%);
+      pointer-events: none;
+    }
+
+    .screen-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .screen-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .mode-toggle {
+      display: flex;
+      gap: 4px;
+      background: var(--black);
+      border-radius: 6px;
+      padding: 3px;
+    }
+    .mode-btn {
+      padding: 4px 12px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .mode-btn.active {
+      background: var(--surface);
+      color: var(--gold);
+      border: 1px solid var(--border);
+    }
+
+    /* ─── TEXTAREA ───────────────────────────────────────── */
+    .input-area {
+      position: relative;
+      padding: 1.5rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      background: transparent;
+      border: none;
+      resize: none;
+      color: var(--cream);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      line-height: 1.7;
+      outline: none;
+      caret-color: var(--gold);
+    }
+    textarea::placeholder { color: var(--muted); font-style: italic; }
+
+    .char-count {
+      position: absolute;
+      bottom: 1.2rem; right: 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+    }
+
+    /* ─── BATCH AREA ─────────────────────────────────────── */
+    .batch-area { padding: 1.5rem; display: none; }
+    .batch-area.visible { display: block; }
+
+    .batch-hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      font-style: italic;
+    }
+
+    .batch-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .batch-item {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .batch-num {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--gold-dim);
+      width: 18px;
+      flex-shrink: 0;
+      padding-top: 8px;
+    }
+
+    .batch-input {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--black);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--cream);
+      font-family: var(--font-body);
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .batch-input:focus { border-color: var(--gold-dim); }
+    .batch-input::placeholder { color: var(--muted); font-style: italic; }
+
+    .remove-btn {
+      width: 28px; height: 28px;
+      flex-shrink: 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .remove-btn:hover { border-color: var(--red); color: var(--red-bright); }
+
+    .add-review-btn {
+      margin-top: 10px;
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .add-review-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
+
+    /* ─── ACTION BAR ─────────────────────────────────────── */
+    .action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.875rem 1.25rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .endpoint-tag {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+    }
+    .endpoint-tag span {
+      color: var(--gold-dim);
+      margin-right: 4px;
+    }
+
+    .analyze-btn {
+      position: relative;
+      padding: 10px 28px;
+      background: var(--gold);
+      color: var(--black);
+      border: none;
+      border-radius: 3px;
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+    .analyze-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
+    }
+    .analyze-btn:hover { background: #FFD560; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,200,66,0.3); }
+    .analyze-btn:active { transform: translateY(0); }
+    .analyze-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* loading spinner inside btn */
+    .btn-spinner {
+      display: none;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: var(--black);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .analyze-btn.loading .btn-spinner { display: inline-block; }
+    .analyze-btn.loading .btn-text { opacity: 0.6; }
+
+    /* ─── RESULT CARD ────────────────────────────────────── */
+    #result-section {
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    #result-section.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .result-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    }
+
+    .result-card.positive { border-top: 3px solid var(--green); }
+    .result-card.negative { border-top: 3px solid var(--red-bright); }
+
+    .result-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .verdict {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .verdict-icon { font-size: 1.8rem; line-height: 1; }
+
+    .verdict-label {
+      font-family: var(--font-display);
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .verdict-label.positive { color: var(--green); }
+    .verdict-label.negative { color: var(--red-bright); }
+
+    .confidence-ring {
+      position: relative;
+      width: 64px; height: 64px;
+      flex-shrink: 0;
+    }
+    .confidence-ring svg { transform: rotate(-90deg); }
+    .ring-bg { fill: none; stroke: var(--border); stroke-width: 4; }
+    .ring-fill { fill: none; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 1s ease; }
+    .ring-fill.positive { stroke: var(--green); }
+    .ring-fill.negative { stroke: var(--red-bright); }
+    .ring-label {
+      position: absolute;
+      inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    /* probability bars */
+    .prob-bars {
+      padding: 1rem 1.5rem 1.25rem;
+    }
+
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .prob-row:last-child { margin-bottom: 0; }
+
+    .prob-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      width: 60px;
+      flex-shrink: 0;
+    }
+
+    .prob-track {
+      flex: 1;
+      height: 6px;
+      background: var(--black);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+    .prob-fill {
+      height: 100%;
+      border-radius: 100px;
+      width: 0;
+      transition: width 1s ease;
+    }
+    .prob-fill.pos { background: linear-gradient(90deg, #16A34A, var(--green)); }
+    .prob-fill.neg { background: linear-gradient(90deg, #991B1B, var(--red-bright)); }
+
+    .prob-val {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--cream);
+      width: 44px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ─── BATCH RESULTS ──────────────────────────────────── */
+    .batch-results { display: flex; flex-direction: column; gap: 10px; }
+
+    .batch-result-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      opacity: 0;
+      transform: translateX(-8px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .batch-result-row.visible { opacity: 1; transform: translateX(0); }
+
+    .batch-result-row .row-idx {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--gold-dim);
+      width: 20px;
+      flex-shrink: 0;
+    }
+
+    .batch-result-row .row-text {
+      flex: 1;
+      font-size: 0.85rem;
+      color: var(--cream);
+      opacity: 0.8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sentiment-pill {
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      flex-shrink: 0;
+    }
+    .sentiment-pill.positive { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+    .sentiment-pill.negative { background: rgba(239,68,68,0.12); color: var(--red-bright); border: 1px solid rgba(239,68,68,0.25); }
+
+    .row-conf {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* ─── RAW JSON PANEL ─────────────────────────────────── */
+    .json-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      padding: 0.5rem 0;
+      transition: color 0.2s;
+    }
+    .json-toggle:hover { color: var(--gold); }
+    .json-toggle .arrow { transition: transform 0.2s; }
+    .json-toggle.open .arrow { transform: rotate(90deg); }
+
+    .json-panel {
+      display: none;
+      margin-top: 0.5rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .json-panel.visible { display: block; }
+
+    .json-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .json-filename { font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted); }
+
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      padding: 2px 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
+    .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+    pre#json-output {
+      padding: 1rem 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      line-height: 1.7;
+      color: var(--cream);
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .json-key   { color: #7DD3FC; }
+    .json-str   { color: #86EFAC; }
+    .json-num   { color: #FCA5A5; }
+    .json-bool  { color: var(--gold); }
+
+    /* ─── ERROR STATE ────────────────────────────────────── */
+    .error-banner {
+      display: none;
+      padding: 12px 16px;
+      background: rgba(155,28,28,0.15);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--red-bright);
+      margin-bottom: 1rem;
+    }
+    .error-banner.visible { display: flex; gap: 10px; align-items: flex-start; }
+
+    /* ─── FOOTER ─────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+    footer a { color: var(--gold-dim); text-decoration: none; }
+    footer a:hover { color: var(--gold); }
+
+    /* ─── SETTINGS ROW ───────────────────────────────────── */
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 1.5rem;
+    }
+    .settings-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      white-space: nowrap;
+    }
+    .api-url-input {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--cream);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .api-url-input:focus { border-color: var(--gold-dim); }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="film-strip">
+      <div class="film-hole"></div><div class="film-hole"></div><div class="film-hole"></div>
+      <div class="film-hole"></div><div class="film-hole"></div><div class="film-hole"></div>
+      <div class="film-hole"></div><div class="film-hole"></div><div class="film-hole"></div>
+    </div>
+    <div class="logo">CineScore</div>
+    <div class="logo-sub">IMDB Sentiment · DistilBERT</div>
+    <div class="api-badge">
+      <span class="dot"></span>
+      <span id="api-status-text">API Connected</span>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+
+    <!-- API URL setting -->
+    <div class="settings-row">
+      <span class="settings-label">API_URL</span>
+      <input class="api-url-input" id="api-url" type="text" value="http://localhost:8000" spellcheck="false" />
+    </div>
+
+    <!-- SCREEN FRAME -->
+    <div class="screen-frame">
+
+      <!-- header bar -->
+      <div class="screen-header">
+        <span class="screen-label">Input</span>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="btn-single" onclick="setMode('single')">Single</button>
+          <button class="mode-btn"        id="btn-batch"  onclick="setMode('batch')">Batch</button>
+        </div>
+      </div>
+
+      <!-- single input -->
+      <div class="input-area" id="single-area">
+        <textarea id="review-input" maxlength="2000"
+          placeholder="Write a movie review to analyse…&#10;&#10;&quot;An absolute masterpiece — the cinematography alone deserves every award.&quot;"></textarea>
+        <span class="char-count"><span id="char-num">0</span> / 2000</span>
+      </div>
+
+      <!-- batch input -->
+      <div class="batch-area" id="batch-area">
+        <p class="batch-hint">Enter up to 8 reviews for batch analysis.</p>
+        <div class="batch-list" id="batch-list">
+          <div class="batch-item">
+            <span class="batch-num">01</span>
+            <input class="batch-input" type="text" placeholder="First review…" />
+            <button class="remove-btn" onclick="removeBatchItem(this)">×</button>
+          </div>
+          <div class="batch-item">
+            <span class="batch-num">02</span>
+            <input class="batch-input" type="text" placeholder="Second review…" />
+            <button class="remove-btn" onclick="removeBatchItem(this)">×</button>
+          </div>
+        </div>
+        <button class="add-review-btn" onclick="addBatchItem()">+ Add review</button>
+      </div>
+
+      <!-- action bar -->
+      <div class="action-bar">
+        <span class="endpoint-tag"><span id="method-label">POST</span><span id="endpoint-label">/predict</span></span>
+        <button class="analyze-btn" id="analyze-btn" onclick="analyse()">
+          <span class="btn-spinner"></span>
+          <span class="btn-text">Analyse</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ERROR BANNER -->
+    <div class="error-banner" id="error-banner">
+      <span>⚠</span>
+      <span id="error-msg">Could not reach the API. Make sure the server is running.</span>
+    </div>
+
+    <!-- RESULT SECTION -->
+    <div id="result-section">
+
+      <!-- Single result -->
+      <div id="single-result"></div>
+
+      <!-- Batch results -->
+      <div class="batch-results" id="batch-results"></div>
+
+      <!-- JSON toggle -->
+      <button class="json-toggle" id="json-toggle" onclick="toggleJson()">
+        <span class="arrow">▶</span> RAW RESPONSE
+      </button>
+      <div class="json-panel" id="json-panel">
+        <div class="json-toolbar">
+          <span class="json-filename">response.json</span>
+          <button class="copy-btn" id="copy-btn" onclick="copyJson()">COPY</button>
+        </div>
+        <pre id="json-output"></pre>
+      </div>
+
+    </div>
+
+  </main>
+
+  <footer>
+    <p>CineScore &nbsp;·&nbsp; DistilBERT fine-tuned on 50K IMDB reviews &nbsp;·&nbsp;
+      <a href="/docs" target="_blank">API Docs →</a>
+    </p>
+  </footer>
+
+  <!-- ─── SCRIPT ──────────────────────────────────────────── -->
+  <script>
+    let currentMode = 'single';
+    let lastJson    = null;
+
+    // char counter
+    const textarea = document.getElementById('review-input');
+    textarea.addEventListener('input', () => {
+      document.getElementById('char-num').textContent = textarea.value.length;
+    });
+
+    // ── MODE SWITCH ────────────────────────────────────────
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('single-area').style.display = mode === 'single' ? 'block' : 'none';
+      const batchArea = document.getElementById('batch-area');
+      batchArea.classList.toggle('visible', mode === 'batch');
+      document.getElementById('btn-single').classList.toggle('active', mode === 'single');
+      document.getElementById('btn-batch').classList.toggle('active', mode === 'batch');
+      document.getElementById('endpoint-label').textContent = mode === 'single' ? '/predict' : '/predict/batch';
+      hideResult();
+    }
+
+    // ── BATCH HELPERS ──────────────────────────────────────
+    function addBatchItem() {
+      const list  = document.getElementById('batch-list');
+      const count = list.children.length + 1;
+      if (count > 8) return;
+      const div = document.createElement('div');
+      div.className = 'batch-item';
+      div.innerHTML = `
+        <span class="batch-num">${String(count).padStart(2,'0')}</span>
+        <input class="batch-input" type="text" placeholder="Review ${count}…" />
+        <button class="remove-btn" onclick="removeBatchItem(this)">×</button>`;
+      list.appendChild(div);
+      renumberBatch();
+    }
+
+    function removeBatchItem(btn) {
+      const list = document.getElementById('batch-list');
+      if (list.children.length <= 1) return;
+      btn.closest('.batch-item').remove();
+      renumberBatch();
+    }
+
+    function renumberBatch() {
+      document.querySelectorAll('#batch-list .batch-num').forEach((el, i) => {
+        el.textContent = String(i + 1).padStart(2, '0');
+      });
+    }
+
+    function getBatchTexts() {
+      return [...document.querySelectorAll('#batch-list .batch-input')]
+        .map(i => i.value.trim())
+        .filter(Boolean);
+    }
+
+    // ── ANALYSE ────────────────────────────────────────────
+    async function analyse() {
+      hideError();
+      hideResult();
+      setLoading(true);
+
+      const baseUrl = document.getElementById('api-url').value.replace(/\/$/, '');
+
+      try {
+        if (currentMode === 'single') {
+          const text = textarea.value.trim();
+          if (!text) { showError('Please enter a review first.'); setLoading(false); return; }
+
+          const res  = await fetch(`${baseUrl}/predict`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          lastJson   = data;
+          renderSingle(data);
+
+        } else {
+          const reviews = getBatchTexts();
+          if (!reviews.length) { showError('Add at least one review.'); setLoading(false); return; }
+
+          const res  = await fetch(`${baseUrl}/predict/batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reviews }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          lastJson   = data;
+          renderBatch(data, reviews);
+        }
+
+        showResult();
+
+      } catch (err) {
+        showError(`Could not reach the API. Make sure the server is running at ${baseUrl}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ── RENDER SINGLE ──────────────────────────────────────
+    function renderSingle(data) {
+      const isPos   = data.label === 'positive';
+      const confPct = Math.round(data.confidence * 100);
+      const r       = 26;
+      const circ    = 2 * Math.PI * r;
+      const offset  = circ - (data.confidence * circ);
+
+      document.getElementById('single-result').innerHTML = `
+        <div class="result-card ${isPos ? 'positive' : 'negative'}">
+          <div class="result-top">
+            <div class="verdict">
+              <span class="verdict-icon">${isPos ? '😊' : '😞'}</span>
+              <span class="verdict-label ${isPos ? 'positive' : 'negative'}">${isPos ? 'Positive' : 'Negative'}</span>
+            </div>
+            <div class="confidence-ring">
+              <svg width="64" height="64" viewBox="0 0 64 64">
+                <circle class="ring-bg"   cx="32" cy="32" r="${r}" />
+                <circle class="ring-fill ${isPos ? 'positive' : 'negative'}" cx="32" cy="32" r="${r}"
+                  stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+                  id="ring-dash" />
+              </svg>
+              <div class="ring-label">${confPct}%</div>
+            </div>
+          </div>
+          <div class="prob-bars">
+            <div class="prob-row">
+              <span class="prob-label">Positive</span>
+              <div class="prob-track"><div class="prob-fill pos" id="bar-pos"></div></div>
+              <span class="prob-val">${(data.prob_pos * 100).toFixed(1)}%</span>
+            </div>
+            <div class="prob-row">
+              <span class="prob-label">Negative</span>
+              <div class="prob-track"><div class="prob-fill neg" id="bar-neg"></div></div>
+              <span class="prob-val">${(data.prob_neg * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+        </div>`;
+
+      // animate after paint
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          document.getElementById('ring-dash').style.strokeDashoffset = offset;
+          document.getElementById('bar-pos').style.width  = `${data.prob_pos * 100}%`;
+          document.getElementById('bar-neg').style.width  = `${data.prob_neg * 100}%`;
+        }, 50);
+      });
+
+      renderJson(data);
+    }
+
+    // ── RENDER BATCH ───────────────────────────────────────
+    function renderBatch(data, texts) {
+      const container = document.getElementById('batch-results');
+      container.innerHTML = '';
+      data.results.forEach((r, i) => {
+        const isPos = r.label === 'positive';
+        const div   = document.createElement('div');
+        div.className = 'batch-result-row';
+        div.innerHTML = `
+          <span class="row-idx">${String(i + 1).padStart(2,'0')}</span>
+          <span class="row-text" title="${escHtml(texts[i])}">${escHtml(texts[i])}</span>
+          <span class="sentiment-pill ${isPos ? 'positive' : 'negative'}">${isPos ? 'POSITIVE' : 'NEGATIVE'}</span>
+          <span class="row-conf">${(r.confidence * 100).toFixed(1)}%</span>`;
+        container.appendChild(div);
+        setTimeout(() => div.classList.add('visible'), 60 + i * 80);
+      });
+      renderJson(data);
+    }
+
+    // ── JSON PANEL ─────────────────────────────────────────
+    function renderJson(data) {
+      document.getElementById('json-output').innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+    }
+
+    function toggleJson() {
+      const panel  = document.getElementById('json-panel');
+      const toggle = document.getElementById('json-toggle');
+      panel.classList.toggle('visible');
+      toggle.classList.toggle('open');
+    }
+
+    async function copyJson() {
+      if (!lastJson) return;
+      await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'COPIED';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 2000);
+    }
+
+    function syntaxHighlight(json) {
+      return json
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, m => {
+          if (/^"/.test(m)) return /:$/.test(m) ? `<span class="json-key">${m}</span>` : `<span class="json-str">${m}</span>`;
+          if (/true|false/.test(m)) return `<span class="json-bool">${m}</span>`;
+          return `<span class="json-num">${m}</span>`;
+        });
+    }
+
+    // ── UI HELPERS ─────────────────────────────────────────
+    function setLoading(v) {
+      const btn = document.getElementById('analyze-btn');
+      btn.disabled = v;
+      btn.classList.toggle('loading', v);
+      btn.querySelector('.btn-text').textContent = v ? 'Analysing…' : 'Analyse';
+    }
+
+    function showResult() {
+      const sec = document.getElementById('result-section');
+      sec.classList.add('visible');
+    }
+    function hideResult() {
+      const sec = document.getElementById('result-section');
+      sec.classList.remove('visible');
+      document.getElementById('single-result').innerHTML  = '';
+      document.getElementById('batch-results').innerHTML  = '';
+      document.getElementById('json-panel').classList.remove('visible');
+      document.getElementById('json-toggle').classList.remove('open');
+    }
+
+    function showError(msg) {
+      const b = document.getElementById('error-banner');
+      document.getElementById('error-msg').textContent = msg;
+      b.classList.add('visible');
+    }
+    function hideError() {
+      document.getElementById('error-banner').classList.remove('visible');
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── HEALTH CHECK ──────────────────────────────────────
+    async function checkHealth() {
+      const baseUrl = document.getElementById('api-url').value.replace(/\/$/, '');
+      try {
+        const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(3000) });
+        const ok  = res.ok;
+        const dot = document.querySelector('.dot');
+        const txt = document.getElementById('api-status-text');
+        dot.style.background    = ok ? 'var(--green)' : 'var(--red-bright)';
+        dot.style.boxShadow     = ok ? '0 0 6px var(--green)' : '0 0 6px var(--red-bright)';
+        txt.textContent         = ok ? 'API Connected' : 'API Unreachable';
+      } catch {
+        const dot = document.querySelector('.dot');
+        dot.style.background = '#F59E0B';
+        dot.style.boxShadow  = '0 0 6px #F59E0B';
+        document.getElementById('api-status-text').textContent = 'Checking…';
+      }
+    }
+
+    document.getElementById('api-url').addEventListener('change', checkHealth);
+    checkHealth();
+    setInterval(checkHealth, 15000);
+  </script>
+</body>
+</html>

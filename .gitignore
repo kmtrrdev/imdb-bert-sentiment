@@ -1,0 +1,25 @@
+# Model weights (كبيرة جداً تتحط على git)
+models/*.pt
+models/*.bin
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Data (usually too large)
+data/raw/
+
+# Results — uncomment if you don't want to track
+# results/
+
+# OS
+.DS_Store
+Thumbs.db
